@@ -535,7 +535,7 @@ namespace SpkD45 {
 				wMean.WriteLine("{0}", Aglobal);
 				// RECALIBRATION EVENTS
 				if (recalibTrigger==0){
-					if (vm[0][t]<2500) {//write spikes after each recalibration event_newfiles:<2500_oldfiles:<1500
+					if (vm[0][t]<1500) {//write spikes after each recalibration event_newfiles:<2500_oldfiles:<1500
 						if (Acal > 2000) {
 							wInfo.Write("{0}", t+t0);//write time of recalibration event
 							for (int i=0; i<NChannels; i++) {//loop across channels
@@ -600,23 +600,23 @@ namespace SpkD45 {
 						//unfortunately, update speed depends on Aglobaldiff, further, signal might be asymmetric
 						//(update median increments only, i.e. if it correlates most of the time, increase corrcoeff)
 						//--> need a threshold to get more reliable (e.g. Qd*std(Aglobaldiff) or Qd)
-						////Vbias[i]=FVbias[i]*SqIg/100/Sampling;//local deviation of global signal;have to divide this by some time constant (e.g. 10)
+						Vbias[i]=FVbias[i]*SqIg/200;//local deviation of global signal;have to divide this by some time constant (e.g. 10)
 						//Vbias[i]=(int)(SIp[i]/SqIgroot*(Sampling+1)/SqIv)*(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);
-						Qdiff[i,dt] = (vm[i][t-1]+vm[i][t]+vm[i][t+1]-Aglobal)*Ascale-Qm[i];//-Vbias[i];//difference between ADC counts and Qm
-						////if (SIp[i]>0) {
-						////	FVbias[i]++;
-						////}
-						////else {
-						////	FVbias[i]--;
-						////}
-						////SIp[i]*=(Sampling-1);
-						////SIp[i]/=Sampling;
-						////SIp[i]+=Aglobaldiff*(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);
+						Qdiff[i,dt] = (vm[i][t-1]+vm[i][t]+vm[i][t+1]-Aglobal)*Ascale-Qm[i]-Vbias[i];//difference between ADC counts and Qm
+						if (SIp[i]>0) {
+							FVbias[i]++;
+						}
+						else {
+							FVbias[i]--;
+						}
+						SIp[i]*=99;
+						SIp[i]/=100;
+						SIp[i]+=Aglobaldiff*(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);
 						//SqIv[i]*=(Sampling-1);
 						//SqIv[i]/=Sampling;
 						//SqIv[i]+=Math.Abs(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);//take L1 norm here
-						////Vsbias[i]+=Vbias[i];
-						////Vsqbias[i]+=Vbias[i]*Vbias[i];
+						Vsbias[i]+=Vbias[i];
+						Vsqbias[i]+=Vbias[i]*Vbias[i];
 						//UPDATE Qm and Qd
 						if (Qdiff[i,dt]>0) {
 							if (Qdiff[i,dt]>Qd[i]) {
