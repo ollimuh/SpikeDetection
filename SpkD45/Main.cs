@@ -29,7 +29,7 @@ namespace SpkD45 {
 		int[] SIp;
 		int[] Vbias;
 		int[] FVbias;
-		long[] Vsbias;
+		long[] FVsbias;
 		long[] Vsqbias;
 		//Variables for the spike detection
 		int[] Sl4;//counter for spike length
@@ -205,7 +205,7 @@ namespace SpkD45 {
 			SIp = new int[NChannels];
 			Vbias = new int[NChannels];
 			FVbias = new int[NChannels];
-			Vsbias = new long[NChannels];
+			FVsbias = new long[NChannels];
 			Vsqbias = new long[NChannels];
 			A = new int[NChannels];//control parameter for amplifier effects
 			Qd4 = new int[NChannels];//noise amplitude
@@ -223,7 +223,6 @@ namespace SpkD45 {
 			CutOffset = sf / 835 + 6;
 			CutAfter = sf / 1002;
 			CutAfterLong = sf / 501;
-			//Slmin = sf / 2004;
 			Sln0= sf / 3340;
 			Sampling = sf;
 			SqIglobal = 0;
@@ -327,7 +326,7 @@ namespace SpkD45 {
 				}
 				FVbias[i]=0;
 				Vbias[i]=0;
-				Vsbias[i]=0;
+				FVsbias[i]=0;
 				Vsqbias[i]=0;
 				A[i]=0;
 				Sl4[i]=0;
@@ -402,18 +401,6 @@ namespace SpkD45 {
 			fsMean = new FileStream(name, FileMode.OpenOrCreate, FileAccess.Write);
 			wMean = new StreamWriter(fsMean);
 		}
-
-		// Finds the integer square root of a positive number  
-		//public static int Isqrt(int num) {  
-		//	if (0 == num) { return 0; }  // Avoid zero divide  
-		//	int n = (num / 2) + 1;       // Initial estimate, never low  
-		//	int n1 = (n + (num / n)) / 2;  
-		//	while (n1 < n) {  
-		//		n = n1;  
-		//		n1 = (n + (num / n)) / 2;  
-		//	} // end while  
-		//	return n;  
-		//} // end Isqrt()  
 
 		public void InitialEstimation (short[][] vm, long t0) {//use this to get a better initial estimate of Qd
 			if (t0 == 0) {
@@ -524,7 +511,6 @@ namespace SpkD45 {
 					Slice[i]=((vm[i][t-1])%4095+(vm[i][t])%4095+(vm[i][t+1])%4095);
 				}
 				Array.Sort(Slice);
-				//SqIgroot=Isqrt((int)(SqIg/Sampling+1));
 				Aglobaldiffold=Aglobaldiff+0;
 				Aglobaldiff=Slice[NChannels / 2]-Aglobal;
 				Aglobal=Slice[NChannels / 2];
@@ -535,7 +521,7 @@ namespace SpkD45 {
 				wMean.WriteLine("{0}", Aglobal);
 				// RECALIBRATION EVENTS
 				if (recalibTrigger==0){
-					if (vm[0][t]<1500) {//write spikes after each recalibration event_newfiles:<2500_oldfiles:<1500
+					if (vm[0][t]<2500) {//write spikes after each recalibration event_newfiles:<2500_oldfiles:<1500
 						if (Acal > 2000) {
 							wInfo.Write("{0}", t+t0);//write time of recalibration event
 							for (int i=0; i<NChannels; i++) {//loop across channels
@@ -601,7 +587,6 @@ namespace SpkD45 {
 						//(update median increments only, i.e. if it correlates most of the time, increase corrcoeff)
 						//--> need a threshold to get more reliable (e.g. Qd*std(Aglobaldiff) or Qd)
 						Vbias[i]=FVbias[i]*SqIg/200;//local deviation of global signal;have to divide this by some time constant (e.g. 10)
-						//Vbias[i]=(int)(SIp[i]/SqIgroot*(Sampling+1)/SqIv)*(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);
 						Qdiff[i,dt] = (vm[i][t-1]+vm[i][t]+vm[i][t+1]-Aglobal)*Ascale-Qm[i]-Vbias[i];//difference between ADC counts and Qm
 						if (SIp[i]>0) {
 							FVbias[i]++;
@@ -612,11 +597,8 @@ namespace SpkD45 {
 						SIp[i]*=99;
 						SIp[i]/=100;
 						SIp[i]+=Aglobaldiff*(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);
-						//SqIv[i]*=(Sampling-1);
-						//SqIv[i]/=Sampling;
-						//SqIv[i]+=Math.Abs(Qdiff[i,dt]-Qdiff[i,(dt+1)%2]);//take L1 norm here
-						Vsbias[i]+=Vbias[i];
-						Vsqbias[i]+=Vbias[i]*Vbias[i];
+						FVsbias[i]+=FVbias[i]/200;//want to see whether this matches the correlation structure
+						Vsqbias[i]+=FVbias[i]/200*FVbias[i]/200;
 						//UPDATE Qm and Qd
 						if (Qdiff[i,dt]>0) {
 							if (Qdiff[i,dt]>Qd[i]) {
@@ -684,46 +666,44 @@ namespace SpkD45 {
 								AHP4[i]=true;
 							}
 							if (Sl4[i]==(Slmax-Sln0)){
-								//if (AHP4[i]<(Slmax-Slmin)){ 
-									for (int ii=1; ii<5;ii++) {
-										if (ChInd5[i,ii]>-1){
-											if (ChInd5[i,ii]<ChInd4[i,0]){//have updated Sl4 already
-												if (Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0)){
-													if ((Amp4[ChInd5[i,ii]]*Qd4[i])<(Amp4[i]*Qd4[ChInd5[i,ii]])){
-														Sl4x[ChInd5[i,ii]]=true;
-														Sx4[i,ii-1]=1;
-														Sx4[i,ii%4]=1;
-													}
+								for (int ii=1; ii<5;ii++) {
+									if (ChInd5[i,ii]>-1){
+										if (ChInd5[i,ii]<ChInd4[i,0]){//have updated Sl4 already
+											if (Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0)){
+												if ((Amp4[ChInd5[i,ii]]*Qd4[i])<(Amp4[i]*Qd4[ChInd5[i,ii]])){
+													Sl4x[ChInd5[i,ii]]=true;
+													Sx4[i,ii-1]=1;
+													Sx4[i,ii%4]=1;
 												}
 											}
-											else {
-												if ((Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0-1)) & (Sl4[ChInd5[i,ii]]<(Slmax-1))){
-													if ((Amp4[ChInd5[i,ii]]*Qd4[i])<(Amp4[i]*Qd4[ChInd5[i,ii]])){
-														Sl4x[ChInd5[i,ii]]=true;
-														Sx4[i,ii-1]=1;
-														Sx4[i,ii%4]=1;
-													}
+										}
+										else {
+											if ((Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0-1)) & (Sl4[ChInd5[i,ii]]<(Slmax-1))){
+												if ((Amp4[ChInd5[i,ii]]*Qd4[i])<(Amp4[i]*Qd4[ChInd5[i,ii]])){
+													Sl4x[ChInd5[i,ii]]=true;
+													Sx4[i,ii-1]=1;
+													Sx4[i,ii%4]=1;
 												}
 											}
 										}
 									}
-									for (int ii=12; ii<16;ii++) {
-										if (ChInd4[i,ii]>-1){
-											if ((Sl5[ChInd4[i,ii]]>(Slmax-2*Sln0-1)) & (Sl5[ChInd4[i,ii]]<(Slmax-1))){
-												if ((Amp5[ChInd4[i,ii]]*Qd4[i])<(Amp4[i]*Qd5[ChInd4[i,ii]])){
-													Sl5x[ChInd4[i,ii]]=true;
-													Sx4[i,ii-12]=1;
-													//Sx4[i,(ii-11)%4]=1;
-												}
+								}
+								for (int ii=12; ii<16;ii++) {
+									if (ChInd4[i,ii]>-1){
+										if ((Sl5[ChInd4[i,ii]]>(Slmax-2*Sln0-1)) & (Sl5[ChInd4[i,ii]]<(Slmax-1))){
+											if ((Amp5[ChInd4[i,ii]]*Qd4[i])<(Amp4[i]*Qd5[ChInd4[i,ii]])){
+												Sl5x[ChInd4[i,ii]]=true;
+												Sx4[i,ii-12]=1;
+												//Sx4[i,(ii-11)%4]=1;
 											}
 										}
 									}
-								//}
+								}
 							}
 							//accept spikes after Slmax frames if...
 							if ((Sl4[i]==Slmax) & (!Sl4x[i])) {// & (AHP4[i]<(Slmax-Slmin))
 								if (AHP4[i]) {
-									wX.Write("{0} {1} {2} {3} {4}", i, t0+t-Slmax+1, Amp4[i], Qd4[i], 1);
+									wX.Write("{0} {1} {2} {3} {4} {5}", i, t0+t-Slmax+1, Amp4[i], Qd4[i], 1, Acal-Slmax+1);
 									for (int ii=0; ii<4; ii++) {
 										wX.Write(" {0}", Sx4[i,ii]);
 									}
@@ -760,7 +740,7 @@ namespace SpkD45 {
 									}
 								}
 								else {
-									wX.Write("{0} {1} {2} {3} {4}", i, t0+t-Slmax+1, Amp4[i], Qd4[i], 0);
+									wX.Write("{0} {1} {2} {3} {4} {5}", i, t0+t-Slmax+1, Amp4[i], Qd4[i], 0, Acal-Slmax+1);
 									for (int ii=0; ii<4; ii++) {
 										wX.Write(" {0}", Sx4[i,ii]);
 									}
@@ -881,44 +861,42 @@ namespace SpkD45 {
 									AHP5[i]=true;
 								}
 								if ((Sl5[i]==(Slmax-Sln0))){
-									//if (AHP5[i]<(Slmax-Slmin)){
-										for (int ii=1; ii<5;ii++) {
-											if (ChInd5[i,ii]<ChInd5[i,0]){//have updated Sl5 already
-												if (Sl5[ChInd5[i,ii]]>(Slmax-2*Sln0)){
-													if ((Amp5[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd5[ChInd5[i,ii]])){
-														Sl5x[ChInd5[i,ii]]=true;
-														Sx5[i,ii-1]=1;
-														Sx5[i,(ii)%4]=1;
-													}
-												}
-											}
-											else {
-												if ((Sl5[ChInd5[i,ii]]>(Slmax-2*Sln0-1)) & (Sl5[ChInd5[i,ii]]<(Slmax-1))){
-													if ((Amp5[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd5[ChInd5[i,ii]])){
-														Sl5x[ChInd5[i,ii]]=true;
-														Sx5[i,ii-1]=1;
-														Sx5[i,(ii)%4]=1;
-													}
+									for (int ii=1; ii<5;ii++) {
+										if (ChInd5[i,ii]<ChInd5[i,0]){//have updated Sl5 already
+											if (Sl5[ChInd5[i,ii]]>(Slmax-2*Sln0)){
+												if ((Amp5[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd5[ChInd5[i,ii]])){
+													Sl5x[ChInd5[i,ii]]=true;
+													Sx5[i,ii-1]=1;
+													Sx5[i,(ii)%4]=1;
 												}
 											}
 										}
-										for (int ii=9; ii<13;ii++) {
-											if (ChInd5[i,ii]>-1) {
-												if (Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0)){//have updated Sl4 already
-													if ((Amp4[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd4[ChInd5[i,ii]])){
-														Sl4x[ChInd5[i,ii]]=true;
-														Sx5[i,ii-9]=1;
-													}
+										else {
+											if ((Sl5[ChInd5[i,ii]]>(Slmax-2*Sln0-1)) & (Sl5[ChInd5[i,ii]]<(Slmax-1))){
+												if ((Amp5[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd5[ChInd5[i,ii]])){
+													Sl5x[ChInd5[i,ii]]=true;
+													Sx5[i,ii-1]=1;
+													Sx5[i,(ii)%4]=1;
 												}
 											}
 										}
-									//}
+									}
+									for (int ii=9; ii<13;ii++) {
+										if (ChInd5[i,ii]>-1) {
+											if (Sl4[ChInd5[i,ii]]>(Slmax-2*Sln0)){//have updated Sl4 already
+												if ((Amp4[ChInd5[i,ii]]*Qd5[i])<(Amp5[i]*Qd4[ChInd5[i,ii]])){
+													Sl4x[ChInd5[i,ii]]=true;
+													Sx5[i,ii-9]=1;
+												}
+											}
+										}
+									}
 								}
 								//accept spikes after Slmax frames if...
-								if ((Sl5[i]==Slmax) & (!Sl5x[i])) {// & (AHP5[i]<(Slmax-Slmin))
+								if ((Sl5[i]==Slmax) & (!Sl5x[i])) {
 									if (AHP5[i]) {
-										w.Write("{0} {1} {2} {3} {4}", i, t0+t-Slmax+1, Amp5[i], Qd5[i], 1);
-										for (int ii=0; ii<4; ii++) {//to be removed...
+										w.Write("{0} {1} {2} {3} {4} {5}", i, t0+t-Slmax+1, Amp5[i], Qd5[i], 1, Acal-Slmax+1);
+										for (int ii=0; ii<4; ii++) {//to be removed...?
 											w.Write(" {0}", (Sx5[i,ii]+Sx5[i,(ii+1)%4])/2);
 										}
 										w.WriteLine ();
@@ -969,7 +947,7 @@ namespace SpkD45 {
 										}
 									}
 									else {
-										w.Write("{0} {1} {2} {3} {4}", i, t0+t-Slmax+1, Amp5[i], Qd5[i], 0);
+										w.Write("{0} {1} {2} {3} {4} {5}", i, t0+t-Slmax+1, Amp5[i], Qd5[i], 0, Acal-Slmax+1);
 										for (int ii=0; ii<4; ii++) {
 											w.Write(" {0}", (Sx5[i,ii]+Sx5[i,(ii+1)%4])/2);
 										}
@@ -1086,7 +1064,7 @@ namespace SpkD45 {
 			}
 			wInfo.WriteLine ("#Sum(avg. deviations from global fluctuations):");
 			for (int i=0; i<NChannels; i++) {//loop across channels
-				wInfo.Write ("{0} ", Vsbias[i]);
+				wInfo.Write ("{0} ", FVsbias[i]);
 			}
 			wInfo.WriteLine();
 			wInfo.WriteLine ("#Sum(avg. squared deviations from global fluctuations):");
